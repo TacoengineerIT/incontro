@@ -209,7 +209,7 @@ Endpoint principali:
 Il progetto è in fase early-stage e ogni contributo è benvenuto.
 
 ```bash
-git clone https://github.com/TUOUSERNAME/incontro.git
+git clone https://github.com/TacoengineerIT/incontro.git
 cd incontro
 # Crea un branch per la tua feature
 git checkout -b feature/nome-feature
@@ -228,7 +228,7 @@ Aree dove serve aiuto:
 
 ## 👤 Autore
 
-**Mattia** — Studente, fuorisede, builder.
+**Marco** — Studente, fuorisede, builder.
 
 > *Questo progetto nasce da un'esperienza personale: arrivare in una nuova città con tanta voglia di studiare e nessuno con cui farlo. Incontro è la risposta che avrei voluto avere.*
 
