@@ -4,8 +4,18 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../models/student.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
 import 'main_navigator.dart';
+import 'story_viewer_screen.dart';
+import 'widgets/avatar_widget.dart';
 import 'widgets/student_card.dart';
+
+// Design system
+const _bg = Color(0xFF131313);
+const _surfaceHigh = Color(0xFF2A2A2A);
+const _primary = Color(0xFFC4C0FF);
+const _primaryDark = Color(0xFF8781FF);
+const _secondary = Color(0xFF5CDBC0);
 
 class SwipeScreen extends StatefulWidget {
   const SwipeScreen({super.key});
@@ -24,10 +34,16 @@ class _SwipeScreenState extends State<SwipeScreen> {
   Student? _matchStudent;
   _SwipeFx _fx = _SwipeFx.none;
 
+  List<Map<String, dynamic>> _storyUsers = [];
+  String? _myAvatar;
+  String _myName = '';
+
   @override
   void initState() {
     super.initState();
     _loadStudents();
+    _loadStoriesFeed();
+    _loadMyProfile();
   }
 
   Future<void> _loadStudents() async {
@@ -45,8 +61,31 @@ class _SwipeScreenState extends State<SwipeScreen> {
     }
   }
 
-  void _openMapsTab() {
-    MainNavigator.maybeOf(context)?.setTab(1);
+  Future<void> _loadStoriesFeed() async {
+    try {
+      final feed = await ApiService.getStoriesFeed();
+      if (!mounted) return;
+      setState(() => _storyUsers = feed
+          .map((e) => {
+                'username': e['user']['username'] ?? '',
+                'avatar_base64': e['user']['avatar_base64'],
+                'stories': e['stories'],
+              })
+          .toList());
+    } catch (_) {}
+  }
+
+  Future<void> _loadMyProfile() async {
+    try {
+      final me = await ApiService.getMe();
+      if (!mounted) return;
+      setState(() {
+        _myAvatar = me['avatar_base64'] as String?;
+        final username = me['username'] as String?;
+        final email = me['email'] as String? ?? '';
+        _myName = username ?? email.split('@').first;
+      });
+    } catch (_) {}
   }
 
   void _showFx(_SwipeFx fx) {
@@ -63,46 +102,165 @@ class _SwipeScreenState extends State<SwipeScreen> {
     _showFx(isLike ? _SwipeFx.like : _SwipeFx.dislike);
     ApiService.swipe(student.id, isLike).then((isMatch) {
       if (!mounted) return;
-      if (isMatch) setState(() => _matchStudent = student);
+      if (isMatch) {
+        setState(() => _matchStudent = student);
+        NotificationService.showMatchNotification(student.displayName);
+      }
     }).catchError((_) {});
     return true;
+  }
+
+  void _openStory(Map<String, dynamic> storyUser) {
+    final stories = storyUser['stories'] as List? ?? [];
+    if (stories.isEmpty) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => StoryViewerScreen(
+          username: storyUser['username'] as String? ?? '',
+          avatarBase64: storyUser['avatar_base64'] as String?,
+          stories: stories
+              .map((s) => Map<String, dynamic>.from(s as Map))
+              .toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStoriesBar() {
+    final fallback = _myName.isNotEmpty ? _myName[0] : 'M';
+    return SizedBox(
+      height: 96,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        itemCount: _storyUsers.length + 1,
+        itemBuilder: (ctx, i) {
+          if (i == 0) {
+            return Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: GestureDetector(
+                onTap: () => MainNavigator.maybeOf(context)?.setTab(3),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Stack(
+                      children: [
+                        AvatarWidget(
+                          base64Image: _myAvatar,
+                          fallbackLetter: fallback,
+                          radius: 28,
+                          hasActiveStory: false,
+                        ),
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: Container(
+                            width: 18,
+                            height: 18,
+                            decoration: BoxDecoration(
+                              color: _primaryDark,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: _bg, width: 2),
+                            ),
+                            child: const Icon(Icons.add,
+                                color: Colors.white, size: 10),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Tu',
+                      style: GoogleFonts.beVietnamPro(
+                          fontSize: 10,
+                          color: Colors.white54,
+                          fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+          final storyUser = _storyUsers[i - 1];
+          final username = storyUser['username'] as String? ?? '';
+          final avatarB64 = storyUser['avatar_base64'] as String?;
+          final fbLetter = username.isNotEmpty ? username[0] : 'U';
+          return GestureDetector(
+            onTap: () => _openStory(storyUser),
+            child: Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  AvatarWidget(
+                    base64Image: avatarB64,
+                    fallbackLetter: fbLetter,
+                    radius: 28,
+                    hasActiveStory: true,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    username.isEmpty ? 'U' : username,
+                    style: GoogleFonts.beVietnamPro(
+                        fontSize: 10,
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w500),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F1A),
+      backgroundColor: _bg,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: _bg,
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.menu_rounded, color: Colors.white70),
+          onPressed: () {},
+        ),
         title: Text(
           'Incontro',
-          style: GoogleFonts.poppins(
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w800,
             fontSize: 22,
+            foreground: Paint()
+              ..shader = const LinearGradient(
+                colors: [_primary, _secondary],
+              ).createShader(const Rect.fromLTWH(0, 0, 120, 24)),
           ),
         ),
         centerTitle: true,
         actions: [
           IconButton(
-            onPressed: _openMapsTab,
-            icon: const Icon(Icons.map_rounded, color: Color(0xFF6C63FF)),
-            tooltip: 'Posti studio vicini',
+            onPressed: () {},
+            icon: const Icon(Icons.notifications_outlined,
+                color: Colors.white70),
           ),
-          const SizedBox(width: 8),
         ],
       ),
       body: Stack(
         children: [
           if (_loading)
-            const Center(
-              child: CircularProgressIndicator(color: Color(0xFF6C63FF)),
+            Center(
+              child: CircularProgressIndicator(
+                color: _primary,
+                strokeWidth: 2,
+              ),
             )
           else if (_error != null)
             Center(
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(32),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -112,18 +270,20 @@ class _SwipeScreenState extends State<SwipeScreen> {
                     Text(
                       _error!,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.white70),
+                      style: GoogleFonts.beVietnamPro(
+                          color: Colors.white60, fontSize: 15),
                     ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () {
+                    const SizedBox(height: 20),
+                    _PillButton(
+                      label: 'Riprova',
+                      color: _primaryDark,
+                      onTap: () {
                         setState(() {
                           _loading = true;
                           _error = null;
                         });
                         _loadStudents();
                       },
-                      child: const Text('Riprova'),
                     ),
                   ],
                 ),
@@ -135,13 +295,13 @@ class _SwipeScreenState extends State<SwipeScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(Icons.people_outline,
-                      color: Colors.white38, size: 64),
+                      color: Colors.white24, size: 64),
                   const SizedBox(height: 16),
                   Text(
                     'Nessuno studente compatibile\nper ora!',
                     textAlign: TextAlign.center,
-                    style: GoogleFonts.poppins(
-                        color: Colors.white54, fontSize: 16),
+                    style: GoogleFonts.beVietnamPro(
+                        color: Colors.white38, fontSize: 16),
                   ),
                 ],
               ),
@@ -149,179 +309,183 @@ class _SwipeScreenState extends State<SwipeScreen> {
           else
             Column(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                  child: Text(
-                    'Trova qualcuno con cui studiare.\nUn match oggi può diventare una compagnia domani.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.62),
-                      height: 1.2,
-                    ),
-                  ).animate().fadeIn(duration: 260.ms),
-                ),
+                _buildStoriesBar(),
                 Expanded(
                   child: CardSwiper(
                     controller: _swiperController,
                     cardsCount: _students.length,
+                    numberOfCardsDisplayed:
+                        _students.length >= 2 ? 2 : 1,
                     onSwipe: _onSwipe,
+                    scale: 0.92,
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 16),
+                        horizontal: 20, vertical: 8),
                     cardBuilder: (ctx, index, h, v) =>
                         StudentCard(student: _students[index]),
                   ),
                 ),
+                // Action buttons
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 32, top: 8),
+                  padding: const EdgeInsets.only(bottom: 24, top: 8),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      _ActionButton(
-                        icon: Icons.close,
-                        color: Colors.redAccent,
+                      _CircleAction(
+                        icon: Icons.close_rounded,
+                        color: Colors.white30,
+                        iconColor: Colors.white70,
+                        size: 56,
                         onTap: () => _swiperController
                             .swipe(CardSwiperDirection.left),
                       ),
-                      const SizedBox(width: 18),
-                      _ActionButton(
-                        icon: Icons.star_rounded,
-                        color: const Color(0xFFFFB347),
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Super like in arrivo.')),
-                          );
-                        },
-                      ),
-                      const SizedBox(width: 18),
-                      _ActionButton(
-                        icon: Icons.favorite,
-                        color: const Color(0xFF6C63FF),
+                      const SizedBox(width: 16),
+                      _CircleAction(
+                        icon: Icons.favorite_rounded,
+                        color: _primaryDark,
+                        iconColor: Colors.white,
+                        size: 68,
                         onTap: () => _swiperController
                             .swipe(CardSwiperDirection.right),
-                        large: true,
+                        glow: true,
                       ),
-                      const SizedBox(width: 18),
-                      _ActionButton(
-                        icon: Icons.map_rounded,
-                        color: const Color(0xFF43C6AC),
-                        onTap: _openMapsTab,
+                      const SizedBox(width: 16),
+                      _CircleAction(
+                        icon: Icons.star_rounded,
+                        color: Colors.white12,
+                        iconColor: const Color(0xFFFFB347),
+                        size: 56,
+                        onTap: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Super like in arrivo.',
+                                  style: GoogleFonts.beVietnamPro()),
+                              backgroundColor: _surfaceHigh,
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ),
                 ),
               ],
             ),
+
+          // FX overlay
           if (_fx != _SwipeFx.none)
             Positioned.fill(
               child: IgnorePointer(
                 child: Center(
                   child: Container(
-                    width: 140,
-                    height: 140,
+                    width: 120,
+                    height: 120,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: Colors.black.withValues(alpha: 0.25),
+                      color: _fx == _SwipeFx.like
+                          ? _primaryDark.withValues(alpha: 0.25)
+                          : Colors.redAccent.withValues(alpha: 0.18),
                     ),
                     child: Icon(
                       _fx == _SwipeFx.like
                           ? Icons.favorite_rounded
                           : Icons.close_rounded,
-                      size: 76,
+                      size: 64,
                       color: _fx == _SwipeFx.like
-                          ? const Color(0xFFFF6B6B)
+                          ? _primary
                           : Colors.redAccent,
                     ),
                   )
                       .animate()
-                      .scaleXY(begin: 0.7, end: 1.12, duration: 220.ms)
+                      .scaleXY(begin: 0.6, end: 1.1, duration: 220.ms)
                       .fadeIn(duration: 120.ms)
                       .then()
-                      .fadeOut(duration: 220.ms),
+                      .fadeOut(duration: 200.ms),
                 ),
               ),
             ),
+
+          // Match overlay
           if (_matchStudent != null)
             Positioned.fill(
               child: Container(
-                color: Colors.black.withValues(alpha: 0.55),
+                color: Colors.black.withValues(alpha: 0.7),
                 child: Center(
                   child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 22),
-                    padding: const EdgeInsets.all(18),
+                    margin: const EdgeInsets.symmetric(horizontal: 24),
+                    padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(22),
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF1A1A2E), Color(0xFF16213E)],
-                      ),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.10),
-                      ),
+                      borderRadius: BorderRadius.circular(32),
+                      color: const Color(0xFF1C1B2E),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF6C63FF).withValues(alpha: 0.35),
-                          blurRadius: 30,
+                          color: _primary.withValues(alpha: 0.25),
+                          blurRadius: 40,
                         ),
                       ],
                     ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Text(
-                          'E un Match! 🎉',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
+                        ShaderMask(
+                          shaderCallback: (bounds) =>
+                              const LinearGradient(
+                            colors: [_primary, _secondary],
+                          ).createShader(bounds),
+                          child: Text(
+                            'È un Incontro! 🎉',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 10),
                         Text(
                           'Tu e ${_matchStudent!.displayName} avete voglia di studiare.\nScrivi un "Ciao" e rompete il ghiaccio.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.72),
-                            height: 1.25,
+                          style: GoogleFonts.beVietnamPro(
+                            color: Colors.white54,
+                            height: 1.5,
                           ),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 20),
                         SizedBox(
-                          height: 52,
                           width: double.infinity,
+                          height: 52,
                           child: ElevatedButton(
                             onPressed: () {
                               setState(() => _matchStudent = null);
                               MainNavigator.maybeOf(context)?.setTab(2);
                             },
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF6C63FF),
+                              backgroundColor: _primaryDark,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(9999),
+                              ),
                             ),
-                            child: const Text('Inizia a chattare'),
+                            child: Text('Inizia a chattare',
+                                style: GoogleFonts.beVietnamPro(
+                                    fontWeight: FontWeight.w600)),
                           ),
                         ),
                         const SizedBox(height: 10),
-                        SizedBox(
-                          height: 48,
-                          width: double.infinity,
-                          child: OutlinedButton(
-                            onPressed: () => setState(() => _matchStudent = null),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.white,
-                              side: BorderSide(
-                                color: Colors.white.withValues(alpha: 0.18),
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                            child: const Text('Non ora'),
+                        TextButton(
+                          onPressed: () =>
+                              setState(() => _matchStudent = null),
+                          child: Text(
+                            'Non ora',
+                            style: GoogleFonts.beVietnamPro(
+                                color: Colors.white38),
                           ),
                         ),
                       ],
                     ),
                   )
                       .animate()
-                      .fadeIn(duration: 180.ms)
-                      .scaleXY(begin: 0.96, end: 1, duration: 220.ms),
+                      .fadeIn(duration: 200.ms)
+                      .scaleXY(begin: 0.94, end: 1, duration: 250.ms),
                 ),
               ),
             ),
@@ -331,22 +495,25 @@ class _SwipeScreenState extends State<SwipeScreen> {
   }
 }
 
-class _ActionButton extends StatelessWidget {
+class _CircleAction extends StatelessWidget {
   final IconData icon;
   final Color color;
+  final Color iconColor;
+  final double size;
   final VoidCallback onTap;
-  final bool large;
+  final bool glow;
 
-  const _ActionButton({
+  const _CircleAction({
     required this.icon,
     required this.color,
+    required this.iconColor,
+    required this.size,
     required this.onTap,
-    this.large = false,
+    this.glow = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final size = large ? 72.0 : 56.0;
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -354,16 +521,47 @@ class _ActionButton extends StatelessWidget {
         height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: color.withValues(alpha: 0.12),
-          border: Border.all(color: color.withValues(alpha: 0.4), width: 2),
-          boxShadow: [
-            BoxShadow(
-              color: color.withValues(alpha: 0.2),
-              blurRadius: 12,
-            ),
-          ],
+          color: color,
+          boxShadow: glow
+              ? [
+                  BoxShadow(
+                    color: _primaryDark.withValues(alpha: 0.45),
+                    blurRadius: 24,
+                    spreadRadius: 2,
+                  ),
+                ]
+              : null,
         ),
-        child: Icon(icon, color: color, size: large ? 32 : 24),
+        child: Icon(icon, color: iconColor, size: size * 0.44),
+      ),
+    );
+  }
+}
+
+class _PillButton extends StatelessWidget {
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _PillButton(
+      {required this.label, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(9999),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.beVietnamPro(
+              color: Colors.white, fontWeight: FontWeight.w600),
+        ),
       ),
     );
   }

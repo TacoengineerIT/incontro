@@ -13,6 +13,7 @@ class MainNavigator extends StatefulWidget {
 
   final int initialIndex;
 
+  // ignore: library_private_types_in_public_api
   static _MainNavigatorState? maybeOf(BuildContext context) =>
       context.findAncestorStateOfType<_MainNavigatorState>();
 
@@ -31,7 +32,7 @@ class _MainNavigatorState extends State<MainNavigator> {
     const barHeight = 74.0;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F1A),
+      backgroundColor: const Color(0xFF131313),
       extendBody: true,
       body: SafeArea(
         top: false,
@@ -55,7 +56,7 @@ class _MainNavigatorState extends State<MainNavigator> {
             child: Container(
               height: barHeight,
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1A2E).withValues(alpha: 0.78),
+                color: const Color(0xFF1E1E1E).withValues(alpha: 0.88),
                 border: Border.all(
                   color: Colors.white.withValues(alpha: 0.08),
                 ),
@@ -119,7 +120,7 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final active = const Color(0xFF6C63FF);
+    final active = const Color(0xFF8781FF);
     final inactive = Colors.white38;
     final color = selected ? active : inactive;
 

@@ -1,26 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../../models/student.dart';
+import 'avatar_widget.dart';
+
+// Design system
+const _surfaceHigh = Color(0xFF2A2A2A);
+const _primary = Color(0xFFC4C0FF);
+const _primaryDark = Color(0xFF8781FF);
+const _secondary = Color(0xFF5CDBC0);
 
 class StudentCard extends StatelessWidget {
   const StudentCard({super.key, required this.student});
 
   final Student student;
 
-  static const _accent = Color(0xFF6C63FF);
-  static const _bg = Color(0xFF1A1A2E);
-
   static const List<Color> _tagColors = [
-    Color(0xFF6C63FF),
-    Color(0xFFFF6584),
-    Color(0xFF43C6AC),
+    Color(0xFFC4C0FF),
+    Color(0xFF5CDBC0),
     Color(0xFFFFB347),
+    Color(0xFFFF6584),
     Color(0xFF56CCF2),
   ];
 
   String _prettyName(String raw) {
     if (raw.isEmpty) return 'Studente';
+    if (raw.startsWith('@')) return raw.replaceFirst('@', '').split('_').first;
     return raw[0].toUpperCase() + raw.substring(1);
   }
 
@@ -39,129 +45,192 @@ class StudentCard extends StatelessWidget {
     return 'Univ. $domain';
   }
 
-  Widget _compatBar(int score) {
-    final v = (score / 100).clamp(0.0, 1.0);
-    final color = Color.lerp(const Color(0xFFFF6B6B), const Color(0xFF43C6AC), v)!;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(999),
-      child: Container(
-        height: 10,
-        color: Colors.white.withValues(alpha: 0.08),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: FractionallySizedBox(
-            widthFactor: v,
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    color.withValues(alpha: 0.95),
-                    color.withValues(alpha: 0.55),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final name = _prettyName(student.displayName);
+    final rawName = student.username ?? student.email.split('@').first;
+    final name = _prettyName(rawName);
     final univ = _universityFromDomain(student.emailDomain);
+    final fallbackLetter = rawName.isNotEmpty ? rawName[0] : 'S';
 
-    final styleIcon = student.learningStyle == 'Rumoroso'
-        ? Icons.headphones_rounded
-        : Icons.menu_book_rounded;
-    final styleText =
-        student.learningStyle == 'Rumoroso' ? '🎧 Rumoroso' : '📚 Silenzioso';
+    final isLib = student.learningStyle != 'Rumoroso';
+    final styleLabel = isLib ? '📖 Library Regular' : '🎧 Cafè & Noise';
 
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            _bg,
-            const Color(0xFF16213E).withValues(alpha: 0.95),
-          ],
-        ),
+        borderRadius: BorderRadius.circular(48),
+        color: _surfaceHigh,
         boxShadow: [
           BoxShadow(
-            color: _accent.withValues(alpha: 0.22),
-            blurRadius: 22,
-            offset: const Offset(0, 10),
+            color: _primary.withValues(alpha: 0.08),
+            blurRadius: 40,
+            offset: const Offset(0, 20),
           ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(26),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 78,
-                  height: 78,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(28),
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF6C63FF), Color(0xFFFF6B6B)],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF6C63FF).withValues(alpha: 0.35),
-                        blurRadius: 18,
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: Text(
-                      name[0].toUpperCase(),
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Background gradient
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                stops: [0, 0.6, 1],
+                colors: [
+                  Color(0xFF1C1B2E),
+                  Color(0xFF1A1A2A),
+                  Color(0xFF0E0E18),
+                ],
+              ),
+            ),
+          ),
+
+          // Accent glow top-right
+          Positioned(
+            top: -60,
+            right: -60,
+            child: Container(
+              width: 220,
+              height: 220,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _primaryDark.withValues(alpha: 0.07),
+              ),
+            ),
+          ),
+
+          // Main content
+          Column(
+            children: [
+              // Avatar area — top 55%
+              Expanded(
+                flex: 55,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 32, 24, 0),
+                    child: AvatarWidget(
+                      base64Image: student.avatarBase64,
+                      fallbackLetter: fallbackLetter,
+                      radius: 80,
+                      hasActiveStory: student.hasActiveStory,
                     ),
                   ),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
+              ),
+
+              // Info area — bottom 45%
+              Expanded(
+                flex: 45,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Name
                       Text(
                         name,
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w800,
                           color: Colors.white,
+                          height: 1.1,
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        univ,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.58),
-                          fontWeight: FontWeight.w600,
+                      // @username
+                      if (student.username != null)
+                        Text(
+                          '@${student.username}',
+                          style: GoogleFonts.beVietnamPro(
+                            fontSize: 14,
+                            color: _secondary,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 6),
+                      // University
                       Row(
                         children: [
-                          Icon(styleIcon, color: _accent, size: 18),
-                          const SizedBox(width: 6),
+                          const Icon(Icons.school_outlined,
+                              size: 13, color: Colors.white38),
+                          const SizedBox(width: 4),
                           Text(
-                            styleText,
-                            style: TextStyle(
+                            univ,
+                            style: GoogleFonts.beVietnamPro(
                               fontSize: 13,
-                              color: Colors.white.withValues(alpha: 0.72),
-                              fontWeight: FontWeight.w600,
+                              color: Colors.white54,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      // Subject chips
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: student.studySubjects
+                            .take(3)
+                            .toList()
+                            .asMap()
+                            .entries
+                            .map((e) {
+                          final color =
+                              _tagColors[e.key % _tagColors.length];
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: color.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(9999),
+                            ),
+                            child: Text(
+                              e.value,
+                              style: GoogleFonts.beVietnamPro(
+                                fontSize: 12,
+                                color: color,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                      const Spacer(),
+                      // Style badge + score
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: _primary.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(9999),
+                            ),
+                            child: Text(
+                              styleLabel,
+                              style: GoogleFonts.beVietnamPro(
+                                fontSize: 12,
+                                color: _primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: _secondary.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(9999),
+                            ),
+                            child: Text(
+                              '${student.score}% match',
+                              style: GoogleFonts.beVietnamPro(
+                                fontSize: 12,
+                                color: _secondary,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
                         ],
@@ -169,104 +238,66 @@ class StudentCard extends StatelessWidget {
                     ],
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            if (student.isStudyingNow)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              ),
+            ],
+          ),
+
+          // STUDIA ORA badge
+          if (student.isStudying)
+            Positioned(
+              top: 20,
+              left: 20,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(999),
-                  color: const Color(0xFF2ECC71).withValues(alpha: 0.18),
-                  border: Border.all(
-                    color: const Color(0xFF2ECC71).withValues(alpha: 0.28),
-                  ),
+                  color: _secondary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(9999),
                 ),
-                child: const Text(
-                  '🟢 Studia ora',
-                  style: TextStyle(
-                    color: Color(0xFF2ECC71),
-                    fontWeight: FontWeight.w900,
-                    fontSize: 12,
-                  ),
-                ),
-              )
-                  .animate(onPlay: (c) => c.repeat())
-                  .fadeIn(duration: 500.ms)
-                  .fadeOut(duration: 700.ms),
-            if (student.isStudyingNow) const SizedBox(height: 14),
-            Text(
-              'MATERIE',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                color: Colors.white.withValues(alpha: 0.38),
-                letterSpacing: 1.5,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: student.studySubjects.asMap().entries.map((entry) {
-                final color = _tagColors[entry.key % _tagColors.length];
-                return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: color.withValues(alpha: 0.5)),
-                  ),
-                  child: Text(
-                    entry.value,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: color,
-                      fontWeight: FontWeight.w700,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: const BoxDecoration(
+                          color: _secondary, shape: BoxShape.circle),
+                    )
+                        .animate(onPlay: (c) => c.repeat())
+                        .fadeOut(duration: 800.ms)
+                        .then()
+                        .fadeIn(duration: 800.ms),
+                    const SizedBox(width: 6),
+                    Text(
+                      '✦ STUDIA ORA',
+                      style: GoogleFonts.beVietnamPro(
+                        fontSize: 11,
+                        color: _secondary,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                      ),
                     ),
-                  ),
-                );
-              }).toList(),
-            ),
-            const Spacer(),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                color: _accent.withValues(alpha: 0.12),
-                border: Border.all(color: _accent.withValues(alpha: 0.20)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.auto_awesome_rounded, color: _accent, size: 16),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Compatibilità',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.80),
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const Spacer(),
-                      Text(
-                        '${student.score}%',
-                        style: const TextStyle(
-                          color: _accent,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  _compatBar(student.score),
-                ],
+                  ],
+                ),
               ),
             ),
-          ],
-        ),
+
+          // Story ring indicator (top right)
+          if (student.hasActiveStory)
+            Positioned(
+              top: 20,
+              right: 20,
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _primary.withValues(alpha: 0.15),
+                ),
+                child: const Icon(Icons.auto_stories_rounded,
+                    size: 14, color: _primary),
+              ),
+            ),
+        ],
       ),
     );
   }

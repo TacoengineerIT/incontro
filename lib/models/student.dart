@@ -5,6 +5,12 @@ class Student {
   final String learningStyle;
   final int score;
   final bool isStudyingNow;
+  final bool isStudying;
+  final String? studyLocation;
+  final String? username;
+  final String? avatarBase64;
+  final int followersCount;
+  final bool hasActiveStory;
 
   Student({
     required this.id,
@@ -13,9 +19,19 @@ class Student {
     required this.learningStyle,
     required this.score,
     required this.isStudyingNow,
+    required this.isStudying,
+    this.studyLocation,
+    this.username,
+    this.avatarBase64,
+    this.followersCount = 0,
+    this.hasActiveStory = false,
   });
 
-  String get displayName => email.split('@').first;
+  String get displayName {
+    if (username != null) return '@$username';
+    return email.split('@').first;
+  }
+
   String get emailDomain => email.contains('@') ? email.split('@').last : '';
 
   factory Student.fromJson(Map<String, dynamic> json) {
@@ -30,6 +46,12 @@ class Student {
           (json['has_active_session'] == true) ||
           (user['is_studying_now'] == true) ||
           (user['has_active_session'] == true),
+      isStudying: json['is_studying'] as bool? ?? false,
+      studyLocation: json['study_location'] as String?,
+      username: (json['username'] ?? user['username']) as String?,
+      avatarBase64: (json['avatar_base64'] ?? user['avatar_base64']) as String?,
+      followersCount: (json['followers_count'] ?? user['followers_count'] ?? 0) as int,
+      hasActiveStory: (json['has_active_story'] ?? user['has_active_story'] ?? false) as bool,
     );
   }
 }

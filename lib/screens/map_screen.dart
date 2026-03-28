@@ -1,353 +1,595 @@
+import 'dart:async';
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../models/place.dart';
 import '../services/api_service.dart';
+
+// Design system
+const _bg = Color(0xFF131313);
+const _surface = Color(0xFF1E1E1E);
+const _surfaceHigh = Color(0xFF2A2A2A);
+const _primary = Color(0xFFC4C0FF);
+const _primaryDark = Color(0xFF8781FF);
+const _secondary = Color(0xFF5CDBC0);
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
-
-  static const double defaultLat = 40.8518;
-  static const double defaultLon = 14.2681;
 
   @override
   State<MapScreen> createState() => _MapScreenState();
 }
 
 class _MapScreenState extends State<MapScreen> {
+  final MapController _mapController = MapController();
+  LatLng? _userPosition;
+  List<Place> _places = [];
   bool _loading = true;
-  String? _error;
-  List<Map<String, dynamic>> _places = const [];
+  final _searchController = TextEditingController();
+  String _activeFilter = 'tutti';
+  Timer? _debounce;
+  static const _defaultPosition = LatLng(41.9028, 12.4964);
 
   @override
   void initState() {
     super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final places = await ApiService.getNearbyPlaces(
-        MapScreen.defaultLat,
-        MapScreen.defaultLon,
-        radiusM: 1800,
-      );
-      if (!mounted) return;
-      setState(() {
-        _places = places;
-        _loading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = e.toString().replaceFirst('Exception: ', '');
-        _loading = false;
-      });
-    }
-  }
-
-  String _categoryEmoji(String? category) {
-    final c = (category ?? '').toLowerCase();
-    if (c.contains('bar') || c.contains('cafe') || c.contains('coffee')) {
-      return '?';
-    }
-    if (c.contains('bibli') || c.contains('library')) return '??';
-    return '???';
-  }
-
-  Future<void> _openInMaps(Map<String, dynamic> place) async {
-    final lat = place['lat'];
-    final lon = place['lon'];
-    if (lat == null || lon == null) return;
-    final uri = Uri.parse(
-      'https://www.google.com/maps/search/?api=1&query=$lat,$lon',
-    );
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
+    _initLocation();
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F0F1A),
-      appBar: AppBar(
-        title: const Text('Posti studio vicini'),
-        centerTitle: true,
+  void dispose() {
+    _debounce?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _initLocation() async {
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always) {
+        final pos = await Geolocator.getCurrentPosition();
+        setState(() {
+          _userPosition = LatLng(pos.latitude, pos.longitude);
+        });
+        await ApiService.updateLocation(pos.latitude, pos.longitude);
+        _mapController.move(_userPosition!, 14);
+        await _loadPlacesNearby(pos.latitude, pos.longitude);
+      } else {
+        setState(() => _loading = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Posizione non disponibile. Cerca una città.'),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadPlacesNearby(double lat, double lon) async {
+    setState(() => _loading = true);
+    try {
+      final rawPlaces = await ApiService.getNearbyPlaces(lat, lon);
+      setState(() {
+        _places = rawPlaces.map((p) => Place.fromJson(p)).toList();
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _searchCity(String city) async {
+    if (city.trim().isEmpty) return;
+    setState(() => _loading = true);
+    try {
+      final places = await ApiService.getPlacesByCity(city.trim());
+      if (places.isNotEmpty) {
+        final first = places.first;
+        _mapController.move(LatLng(first.lat, first.lon), 13);
+        setState(() {
+          _places = places;
+          _loading = false;
+        });
+      } else {
+        setState(() => _loading = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Nessun posto trovato a $city')),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() => _loading = false);
+    }
+  }
+
+  void _onMapMoved(MapCamera camera, bool hasGesture) {
+    if (!hasGesture) return;
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 800), () async {
+      final bounds = camera.visibleBounds;
+      final newPlaces = await ApiService.getPlacesByBbox(
+        minLat: bounds.south,
+        maxLat: bounds.north,
+        minLon: bounds.west,
+        maxLon: bounds.east,
+      );
+      setState(() {
+        final existing = {for (var p in _places) '${p.lat},${p.lon}': p};
+        for (var p in newPlaces) {
+          existing['${p.lat},${p.lon}'] = p;
+        }
+        _places = existing.values.toList();
+      });
+    });
+  }
+
+  List<Place> get _filteredPlaces {
+    if (_activeFilter == 'tutti') return _places;
+    return _places.where((p) => p.category == _activeFilter).toList();
+  }
+
+  void _centerOnUser() {
+    final pos = _userPosition ?? _defaultPosition;
+    _mapController.move(pos, 15);
+  }
+
+  Future<void> _openGoogleMaps(Place place) async {
+    final uri = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1'
+      '&destination=${place.lat},${place.lon}'
+      '&travelmode=walking',
+    );
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _openAppleMaps(Place place) async {
+    final encoded = Uri.encodeComponent(place.name);
+    final uri = Uri.parse(
+      'maps://maps.apple.com/?daddr=${place.lat},${place.lon}&q=$encoded',
+    );
+    final fallback = Uri.parse(
+      'https://maps.apple.com/?daddr=${place.lat},${place.lon}&q=$encoded',
+    );
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      await launchUrl(fallback, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  String _distanceLabel(Place place) {
+    if (place.distanceM == null) return '';
+    final d = place.distanceM!;
+    if (d >= 1000) return '${(d / 1000).toStringAsFixed(1)} km';
+    return '${d.toStringAsFixed(0)} m';
+  }
+
+  void _showPlaceDetail(Place place) {
+    final isCafe = place.category == 'cafe';
+    final categoryColor = isCafe ? const Color(0xFFFFB347) : _secondary;
+    final categoryLabel = isCafe ? '☕ Bar & Caffè' : '📚 Biblioteca';
+    final dist = _distanceLabel(place);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _surfaceHigh,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      body: RefreshIndicator(
-        color: const Color(0xFF6C63FF),
-        onRefresh: _load,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 14, 18, 120),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
-                gradient: LinearGradient(
-                  colors: [
-                    const Color(0xFF1A1A2E),
-                    const Color(0xFF1A1A2E).withValues(alpha: 0.7),
-                  ],
+            // Drag handle
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
                 ),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
               ),
-              child: Row(
-                children: [
+            ),
+            const SizedBox(height: 20),
+            // Name + distance
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    place.name,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      height: 1.2,
+                    ),
+                  ),
+                ),
+                if (dist.isNotEmpty) ...[
+                  const SizedBox(width: 12),
                   Container(
-                    width: 42,
-                    height: 42,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF6C63FF), Color(0xFF43C6AC)],
+                      color: _primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(9999),
+                    ),
+                    child: Text(
+                      dist,
+                      style: GoogleFonts.beVietnamPro(
+                        fontSize: 12,
+                        color: _primary,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    child: const Icon(Icons.place_rounded, color: Colors.white),
                   ),
-                  const SizedBox(width: 12),
+                ],
+              ],
+            ),
+            const SizedBox(height: 10),
+            // Category chip
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              decoration: BoxDecoration(
+                color: categoryColor.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(9999),
+              ),
+              child: Text(
+                categoryLabel,
+                style: GoogleFonts.beVietnamPro(
+                  fontSize: 13,
+                  color: categoryColor,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            if (place.address != null) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Icon(Icons.location_on_outlined,
+                      size: 14, color: Colors.white38),
+                  const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      'Qui trovi posti comodi per studiare vicino a Napoli.\nA breve aggiungiamo la geolocalizzazione.',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.78),
-                        height: 1.25,
+                      place.address!,
+                      style: GoogleFonts.beVietnamPro(
+                        fontSize: 13,
+                        color: Colors.white54,
                       ),
                     ),
                   ),
                 ],
               ),
-            ).animate().fadeIn(duration: 220.ms).moveY(begin: 8, end: 0),
-            const SizedBox(height: 14),
-            if (_loading)
-              Padding(
-                padding: const EdgeInsets.only(top: 60),
-                child: Center(
-                  child: Column(
-                    children: [
-                      const CircularProgressIndicator(
-                        color: Color(0xFF6C63FF),
+            ],
+            const SizedBox(height: 24),
+            // Action buttons
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => _openGoogleMaps(place),
+                    child: Container(
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: _primaryDark,
+                        borderRadius: BorderRadius.circular(9999),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _primaryDark.withValues(alpha: 0.35),
+                            blurRadius: 16,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 14),
-                      Text(
-                        'Cerco posti vicini�',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.65),
-                        ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.map_rounded,
+                              color: Colors.white, size: 18),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Google Maps',
+                            style: GoogleFonts.beVietnamPro(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
-              )
-            else if (_error != null)
-              _ErrorState(message: _error!, onRetry: _load)
-            else if (_places.isEmpty)
-              _EmptyState(onRetry: _load)
-            else
-              ..._places.map((p) {
-                final name = (p['name'] ?? 'Posto studio').toString();
-                final category = (p['category'] ?? '').toString();
-                final dist = p['distance_m'];
-                final distanceText = dist is num ? '${dist.round()} m' : '�';
-                final emoji = _categoryEmoji(category);
-
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1A1A2E).withValues(alpha: 0.85),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.08),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => _openAppleMaps(place),
+                    child: Container(
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: _primaryDark.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(9999),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.navigation_rounded,
+                              color: _primaryDark, size: 18),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Apple Maps',
+                            style: GoogleFonts.beVietnamPro(
+                              color: _primaryDark,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.25),
-                        blurRadius: 18,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
                   ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(14),
-                          color: Colors.white.withValues(alpha: 0.06),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.10),
-                          ),
-                        ),
-                        child: Center(
-                          child: Text(
-                            emoji,
-                            style: const TextStyle(fontSize: 18),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              name,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                Text(
-                                  category.isEmpty ? 'Posto studio' : category,
-                                  style: TextStyle(
-                                    color:
-                                        Colors.white.withValues(alpha: 0.65),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(99),
-                                    color: const Color(0xFF6C63FF)
-                                        .withValues(alpha: 0.16),
-                                    border: Border.all(
-                                      color: const Color(0xFF6C63FF)
-                                          .withValues(alpha: 0.22),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    distanceText,
-                                    style: const TextStyle(
-                                      color: Color(0xFF6C63FF),
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            SizedBox(
-                              height: 40,
-                              child: OutlinedButton.icon(
-                                onPressed: () => _openInMaps(p),
-                                style: OutlinedButton.styleFrom(
-                                  side: BorderSide(
-                                    color:
-                                        Colors.white.withValues(alpha: 0.14),
-                                  ),
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                ),
-                                icon: const Icon(Icons.navigation_rounded),
-                                label: const Text('Apri in Maps'),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-                    .animate()
-                    .fadeIn(duration: 220.ms)
-                    .moveY(begin: 10, end: 0);
-              }),
+                ),
+              ],
+            ),
           ],
         ),
       ),
     );
   }
-}
 
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.onRetry});
-
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 56),
-      child: Column(
-        children: [
-          Icon(
-            Icons.search_off_rounded,
-            color: Colors.white.withValues(alpha: 0.35),
-            size: 56,
+  Widget _buildFilterChip(String label, String value) {
+    final active = _activeFilter == value;
+    return GestureDetector(
+      onTap: () => setState(() => _activeFilter = value),
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color:
+              active ? _primaryDark : _surface.withValues(alpha: 0.90),
+          borderRadius: BorderRadius.circular(9999),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.beVietnamPro(
+            color: active ? Colors.white : Colors.white54,
+            fontSize: 13,
+            fontWeight: active ? FontWeight.w700 : FontWeight.w500,
           ),
-          const SizedBox(height: 12),
-          Text(
-            'Nessun posto trovato.',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
-          ),
-          const SizedBox(height: 14),
-          SizedBox(
-            height: 44,
-            child: ElevatedButton(
-              onPressed: onRetry,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF6C63FF),
-              ),
-              child: const Text('Riprova'),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
-}
-
-class _ErrorState extends StatelessWidget {
-  const _ErrorState({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 50),
-      child: Column(
+    return Scaffold(
+      backgroundColor: _bg,
+      body: Stack(
         children: [
-          const Icon(Icons.error_outline_rounded,
-              color: Colors.redAccent, size: 52),
-          const SizedBox(height: 12),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
-          ),
-          const SizedBox(height: 14),
-          SizedBox(
-            height: 44,
-            child: ElevatedButton(
-              onPressed: onRetry,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF6C63FF),
+          // LAYER 1 — Map
+          FlutterMap(
+            mapController: _mapController,
+            options: MapOptions(
+              initialCenter: _userPosition ?? _defaultPosition,
+              initialZoom: 13,
+              onMapEvent: (event) {
+                if (event is MapEventMoveEnd) {
+                  _onMapMoved(event.camera, true);
+                }
+              },
+            ),
+            children: [
+              TileLayer(
+                urlTemplate:
+                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.incontro.studymatch',
               ),
-              child: const Text('Riprova'),
+              MarkerLayer(
+                markers: [
+                  if (_userPosition != null)
+                    Marker(
+                      point: _userPosition!,
+                      width: 28,
+                      height: 28,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: _primaryDark,
+                          shape: BoxShape.circle,
+                          border:
+                              Border.all(color: Colors.white, width: 2),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _primaryDark.withValues(alpha: 0.55),
+                              blurRadius: 10,
+                            ),
+                          ],
+                        ),
+                        child: const Icon(Icons.person,
+                            color: Colors.white, size: 14),
+                      ),
+                    ),
+                  ..._filteredPlaces.map((place) {
+                    final isCafe = place.category == 'cafe';
+                    return Marker(
+                      point: LatLng(place.lat, place.lon),
+                      width: 44,
+                      height: 44,
+                      child: GestureDetector(
+                        onTap: () => _showPlaceDetail(place),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: _secondary,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: _secondary.withValues(alpha: 0.45),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            isCafe ? Icons.coffee : Icons.local_library,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ],
+          ),
+
+          // LAYER 2 — Search bar + filter chips
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              child: Column(
+                children: [
+                  Padding(
+                    padding:
+                        const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: BackdropFilter(
+                        filter:
+                            ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                        child: Container(
+                          color: _surface.withValues(alpha: 0.88),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _searchController,
+                                  style: GoogleFonts.beVietnamPro(
+                                      color: Colors.white),
+                                  textInputAction: TextInputAction.search,
+                                  onSubmitted: _searchCity,
+                                  decoration: InputDecoration(
+                                    hintText:
+                                        'Cerca città... es. Napoli, Roma',
+                                    hintStyle: GoogleFonts.beVietnamPro(
+                                        color: Colors.white38,
+                                        fontSize: 14),
+                                    prefixIcon: const Icon(Icons.search,
+                                        color: Colors.white38),
+                                    border: InputBorder.none,
+                                    contentPadding:
+                                        const EdgeInsets.symmetric(
+                                            vertical: 14),
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: _centerOnUser,
+                                icon: const Icon(
+                                    Icons.my_location_rounded,
+                                    color: _primaryDark),
+                                tooltip: 'La mia posizione',
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Filter chips
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding:
+                        const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Row(
+                      children: [
+                        _buildFilterChip('Tutti', 'tutti'),
+                        const SizedBox(width: 8),
+                        _buildFilterChip('☕ Bar & Caffè', 'cafe'),
+                        const SizedBox(width: 8),
+                        _buildFilterChip(
+                            '📚 Biblioteche', 'study_room'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
+
+          // LAYER 3 — Result count badge
+          if (_filteredPlaces.isNotEmpty)
+            Positioned(
+              bottom: 100,
+              left: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 7),
+                decoration: BoxDecoration(
+                  color: _surface.withValues(alpha: 0.90),
+                  borderRadius: BorderRadius.circular(9999),
+                ),
+                child: Text(
+                  '${_filteredPlaces.length} posti trovati',
+                  style: GoogleFonts.beVietnamPro(
+                      color: Colors.white70, fontSize: 12),
+                ),
+              ),
+            ),
+
+          // LAYER 4 — Loading
+          if (_loading)
+            Positioned(
+              top: 130,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: CircularProgressIndicator(
+                    color: _primary.withValues(alpha: 0.8)),
+              ),
+            ),
         ],
+      ),
+      floatingActionButton: Container(
+        width: 52,
+        height: 52,
+        decoration: BoxDecoration(
+          color: _primaryDark,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: _primaryDark.withValues(alpha: 0.4),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: IconButton(
+          onPressed: _centerOnUser,
+          icon: const Icon(Icons.my_location_rounded,
+              color: Colors.white, size: 22),
+        ),
       ),
     );
   }

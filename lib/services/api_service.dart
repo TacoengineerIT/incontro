@@ -3,10 +3,12 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../models/place.dart';
 import '../models/student.dart';
+import '../models/user_profile.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://localhost:8000';
+  static const String baseUrl = 'https://incontrobackend-production.up.railway.app';
   static String? _token;
 
   static VoidCallback? onUnauthorized;
@@ -102,6 +104,153 @@ class ApiService {
     if (res.statusCode != 200) throw _exceptionFromResponse(res);
   }
 
+  // --- POSIZIONE ---
+  static Future<void> updateLocation(double lat, double lon) async {
+    await http.put(
+      Uri.parse('$baseUrl/me/location'),
+      headers: _headers,
+      body: jsonEncode({'lat': lat, 'lon': lon}),
+    );
+  }
+
+  // --- SESSIONE STUDIO ---
+  static Future<void> startStudySession(
+      String locationName, double lat, double lon) async {
+    await http.post(
+      Uri.parse('$baseUrl/me/study-session'),
+      headers: _headers,
+      body: jsonEncode({
+        'location_name': locationName,
+        'lat': lat,
+        'lon': lon,
+      }),
+    );
+  }
+
+  static Future<void> stopStudySession() async {
+    await http.delete(
+      Uri.parse('$baseUrl/me/study-session'),
+      headers: _headers,
+    );
+  }
+
+  // --- USERNAME ---
+  static Future<UserProfile> updateUsername(String username) async {
+    final res = await _request(
+      () => http.put(
+        Uri.parse('$baseUrl/me/username'),
+        headers: _headers,
+        body: jsonEncode({'username': username}),
+      ),
+    );
+    if (res.statusCode != 200) throw _exceptionFromResponse(res);
+    return UserProfile.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
+  static Future<List<UserProfile>> searchUsers(String query) async {
+    final uri = Uri.parse('$baseUrl/users/search')
+        .replace(queryParameters: {'q': query});
+    final res = await _request(() => http.get(uri, headers: _headers));
+    if (res.statusCode != 200) throw _exceptionFromResponse(res);
+    final data = jsonDecode(res.body) as List;
+    return data.map((e) => UserProfile.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  static Future<UserProfile> getUserByUsername(String username) async {
+    final res = await _request(
+      () => http.get(
+        Uri.parse('$baseUrl/users/$username'),
+        headers: _headers,
+      ),
+    );
+    if (res.statusCode != 200) throw _exceptionFromResponse(res);
+    return UserProfile.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
+  // --- AVATAR ---
+  static Future<void> updateAvatar(String base64Image) async {
+    final res = await _request(
+      () => http.put(
+        Uri.parse('$baseUrl/me/avatar'),
+        headers: _headers,
+        body: jsonEncode({'avatar_base64': base64Image}),
+      ),
+    );
+    if (res.statusCode != 200) throw _exceptionFromResponse(res);
+  }
+
+  // --- FOLLOWER ---
+  static Future<void> followUser(String username) async {
+    final res = await _request(
+      () => http.post(
+        Uri.parse('$baseUrl/users/$username/follow'),
+        headers: _headers,
+      ),
+    );
+    if (res.statusCode != 200) throw _exceptionFromResponse(res);
+  }
+
+  static Future<void> unfollowUser(String username) async {
+    final res = await _request(
+      () => http.delete(
+        Uri.parse('$baseUrl/users/$username/follow'),
+        headers: _headers,
+      ),
+    );
+    if (res.statusCode != 200) throw _exceptionFromResponse(res);
+  }
+
+  static Future<List<UserProfile>> getFollowers(String username) async {
+    final res = await _request(
+      () => http.get(
+        Uri.parse('$baseUrl/users/$username/followers'),
+        headers: _headers,
+      ),
+    );
+    if (res.statusCode != 200) throw _exceptionFromResponse(res);
+    final data = jsonDecode(res.body) as List;
+    return data.map((e) => UserProfile.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  static Future<List<UserProfile>> getFollowing(String username) async {
+    final res = await _request(
+      () => http.get(
+        Uri.parse('$baseUrl/users/$username/following'),
+        headers: _headers,
+      ),
+    );
+    if (res.statusCode != 200) throw _exceptionFromResponse(res);
+    final data = jsonDecode(res.body) as List;
+    return data.map((e) => UserProfile.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  // --- STORIES ---
+  static Future<void> postStory(String base64Image, String? caption) async {
+    final res = await _request(
+      () => http.post(
+        Uri.parse('$baseUrl/me/story'),
+        headers: _headers,
+        body: jsonEncode({
+          'image_base64': base64Image,
+          'caption': caption,
+        }),
+      ),
+    );
+    if (res.statusCode != 200) throw _exceptionFromResponse(res);
+  }
+
+  static Future<List<Map<String, dynamic>>> getStoriesFeed() async {
+    final res = await _request(
+      () => http.get(
+        Uri.parse('$baseUrl/stories/feed'),
+        headers: _headers,
+      ),
+    );
+    if (res.statusCode != 200) throw _exceptionFromResponse(res);
+    final data = jsonDecode(res.body) as List;
+    return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
   // --- SWIPE ---
   static Future<List<Student>> getRecommendations() async {
     final res = await _request(
@@ -152,6 +301,15 @@ class ApiService {
     return <Map<String, dynamic>>[];
   }
 
+  static Future<List<dynamic>> getMatches() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/matches/me'),
+      headers: _headers,
+    );
+    if (res.statusCode == 200) return jsonDecode(res.body);
+    throw Exception('Impossibile caricare i match');
+  }
+
   // --- MAPS ---
   static Future<List<Map<String, dynamic>>> getNearbyPlaces(
     double lat,
@@ -172,5 +330,41 @@ class ApiService {
     }
     if (data is List) return List<Map<String, dynamic>>.from(data);
     return <Map<String, dynamic>>[];
+  }
+
+  static Future<List<Place>> getPlacesByCity(String city) async {
+    final uri = Uri.parse('$baseUrl/maps/places')
+        .replace(queryParameters: {'city': city, 'limit': '30'});
+    final res = await http.get(uri, headers: _headers);
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body)['places'] as List;
+      return data.map((e) => Place.fromJson(e)).toList();
+    }
+    return [];
+  }
+
+  static Future<List<Place>> getPlacesByBbox({
+    required double minLat,
+    required double maxLat,
+    required double minLon,
+    required double maxLon,
+  }) async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/maps/places/bbox').replace(
+        queryParameters: {
+          'min_lat': minLat.toString(),
+          'max_lat': maxLat.toString(),
+          'min_lon': minLon.toString(),
+          'max_lon': maxLon.toString(),
+          'limit': '30',
+        },
+      ),
+      headers: _headers,
+    );
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body)['places'] as List;
+      return data.map((e) => Place.fromJson(e)).toList();
+    }
+    return [];
   }
 }

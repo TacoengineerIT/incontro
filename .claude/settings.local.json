@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter pub:*)",
+      "Bash(flutter analyze:*)",
+      "Bash(flutter build:*)",
+      "Bash(flutter clean:*)",
+      "Bash(py -3.11 -m uvicorn main:app --reload)",
+      "Bash(ping -n 4 127.0.0.1)",
+      "Bash(curl -s http://localhost:8000/docs)",
+      "Bash(curl:*)",
+      "Bash(flutter run:*)",
+      "Bash(taskkill /F /IM study_match.exe)",
+      "Bash(cmd.exe /c \"taskkill /F /IM study_match.exe\" 2>&1)",
+      "Bash(cmd.exe /c \"wmic process where \\\\\"ExecutablePath like '%study_match%'\\\\\" get ProcessId,Name,ExecutablePath 2>&1\")",
+      "Bash(cmd.exe /c \"del /F \\\\\"C:\\\\\\\\Users\\\\\\\\mabat\\\\\\\\study_match\\\\\\\\build\\\\\\\\windows\\\\\\\\x64\\\\\\\\runner\\\\\\\\Debug\\\\\\\\study_match.exe\\\\\" 2>&1\")",
+      "Bash(cmd.exe /c \"powershell -Command \\\\\"Get-Process | Where-Object { \\\\$_.Modules | Where-Object { \\\\$_.FileName -like '*study_match*' } } | Select-Object Id,ProcessName | Format-Table -AutoSize\\\\\"\")",
+      "Bash(cmd.exe /c \"powershell -Command \\\\\"$f='C:\\\\\\\\Users\\\\\\\\mabat\\\\\\\\study_match\\\\\\\\build\\\\\\\\windows\\\\\\\\x64\\\\\\\\runner\\\\\\\\Debug\\\\\\\\study_match.exe'; if\\(Test-Path $f\\){Write-Host 'EXISTS'; $s=[System.IO.File]::Open\\($f,'Open','ReadWrite'\\); $s.Close\\(\\)} else {Write-Host 'NOT FOUND'}\\\\\"\")",
+      "Bash(cmd.exe /c \"tasklist | findstr /i dart 2>&1\")",
+      "Bash(cmd.exe /c \"tasklist | findstr /i flutter 2>&1\")",
+      "Bash(cmd.exe /c \"rename \\\\\"C:\\\\\\\\Users\\\\\\\\mabat\\\\\\\\study_match\\\\\\\\build\\\\\\\\windows\\\\\\\\x64\\\\\\\\runner\\\\\\\\Debug\\\\\\\\study_match.exe\\\\\" \\\\\"study_match_old.exe\\\\\" 2>&1\")",
+      "Bash(cmd.exe /c \"powershell -Command \\\\\"Get-Process | Select-Object Id,ProcessName,Path | Where-Object {$_.Path -like '*study_match*' -or $_.ProcessName -like '*study*'} | Format-Table -AutoSize\\\\\"\")",
+      "Bash(powershell.exe -NoProfile -Command \"Get-Process | Where-Object { \\\\$_.Path -like '*study*' } | Format-Table Id,ProcessName,Path -AutoSize\" 2>&1)",
+      "Bash(powershell.exe -NoProfile -Command \"Stop-Process -Id 25896 -Force\")",
+      "Bash(py -3.11 -m pip show supabase python-dotenv)",
+      "Bash(py:*)",
+      "Bash(ping -n 1 batjwbcjqghvctyiojux.supabase.co)",
+      "Bash(nslookup:*)",
+      "Bash(taskkill /F /IM python.exe)",
+      "Bash(taskkill:*)"
+    ]
+  }
+}
